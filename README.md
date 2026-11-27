@@ -64,3 +64,12 @@ python -m unittest discover -s tests -v
 - Chống trùng: URL được chuẩn hóa (`rss.py: normalize_url` — bỏ `utm_*`/`fbclid`, `www.`, `#fragment`, `/` cuối, http→https, sắp xếp query) và lưu duy nhất ở `news.url_norm`.
 - Chạy: `pip install -r requirements.txt && python -m uvicorn server:app --host 127.0.0.1 --port 8787`, mở http://127.0.0.1:8787 → News Center.
 - Test: `pip install httpx && python -m unittest discover -s tests`.
+
+## Giai đoạn 2 — RSS tự động
+
+- **Scheduler** chạy trong tiến trình backend (thread, không dịch vụ ngoài), quét mọi nguồn đang bật khi chưa có lượt quét nào trong chu kỳ. Chỉ hoạt động khi backend đang chạy.
+- Biến môi trường: `AICC_SCHEDULER=1` để bật (mặc định **tắt**; test không tự khởi động); `AICC_SCHEDULER_INTERVAL_MIN=60` (tối thiểu 5).
+- Mỗi lượt quét (tự động hoặc thủ công) ghi vào bảng `collect_runs`: thời gian, trạng thái (`ok`/`partial`/`error`), tin mới, trùng, lỗi. Dashboard (News Center) hiển thị trạng thái scheduler, lần quét tới, lần gần nhất; API: `GET /api/scheduler`.
+- **Không chạy trùng:** khóa (lease) trong SQLite bảo vệ cả quét thủ công lẫn tự động; thời điểm quét kế tiếp đọc từ DB. Nhờ vậy nhiều worker dùng chung một file DB không quét chồng nhau. **Chưa hỗ trợ nhiều instance dùng DB riêng/mạng** — khuyến nghị chạy một worker (`uvicorn` mặc định).
+- **Chống SSRF khi tải feed:** kiểm tra URL ban đầu và từng redirect (tối đa 3); chỉ http(s), cổng 80/443, không có user:pass; từ chối nếu bất kỳ IP nào là loopback/riêng tư/link-local/metadata/CGNAT/multicast (kể cả IPv4-mapped IPv6); DNS chỉ phân giải một lần mỗi hop và kết nối thẳng tới IP đã kiểm tra (chống DNS rebinding; TLS vẫn xác minh theo tên miền). Timeout 10s/thao tác, 25s tổng, tối đa 2MB, không giải nén (`Accept-Encoding: identity`). Không đi qua proxy hệ thống.
+- Test: `python -m unittest discover -s tests` (29 test, dùng HTTP server cục bộ và resolver giả, không cần Internet).

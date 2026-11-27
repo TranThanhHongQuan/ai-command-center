@@ -1,9 +1,12 @@
 """RSS/Atom: chuẩn hóa URL, phân tích feed, lưu tin chống trùng. Không phụ thuộc FastAPI."""
 from __future__ import annotations
 import datetime as dt
+import http.client
 import ipaddress
 import re
 import socket
+import ssl
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -45,26 +48,107 @@ def normalize_url(url: str) -> str | None:
     return urllib.parse.urlunsplit(('https', netloc, path, urllib.parse.urlencode(query), ''))
 
 
-def check_feed_url(url: str) -> None:
-    """Chặn URL nội bộ (SSRF). Ném ValueError nếu không an toàn."""
-    p = urllib.parse.urlsplit(url)
-    if p.scheme not in ('http', 'https') or not p.hostname:
-        raise ValueError('URL nguồn phải là http(s)')
+ALLOWED_PORTS = {80, 443}
+TIMEOUT = 10          # giây cho mỗi thao tác socket
+TOTAL_DEADLINE = 25   # giây cho cả một lần tải (kể cả redirect)
+MAX_REDIRECTS = 3
+
+
+class FetchError(ValueError):
+    pass
+
+
+def _is_public(ip_str: str) -> bool:
+    ip = ipaddress.ip_address(ip_str.split('%')[0])
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
+
+
+def _validate(url: str, resolver=None) -> tuple[str, str, int, list[str]]:
+    """Kiểm tra URL và phân giải DNS một lần. Trả (scheme, host, port, ips công khai).
+    Từ chối nếu BẤT KỲ địa chỉ nào không công khai (loopback, riêng tư, link-local, metadata...)."""
     try:
-        infos = socket.getaddrinfo(p.hostname, p.port or (443 if p.scheme == 'https' else 80))
+        p = urllib.parse.urlsplit(url)
+        port = p.port
+    except ValueError as ex:
+        raise FetchError('URL không hợp lệ') from ex
+    scheme = p.scheme.lower()
+    if scheme not in ('http', 'https') or not p.hostname:
+        raise FetchError('URL nguồn phải là http(s)')
+    if p.username or p.password:
+        raise FetchError('URL không được chứa tài khoản')
+    port = port or (443 if scheme == 'https' else 80)
+    if port not in ALLOWED_PORTS:
+        raise FetchError(f'Cổng {port} không được phép')
+    host = p.hostname
+    try:
+        infos = (resolver or socket.getaddrinfo)(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as ex:
-        raise ValueError(f'Không phân giải được tên miền: {p.hostname}') from ex
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global:
-            raise ValueError('Không cho phép địa chỉ nội bộ/riêng tư')
+        raise FetchError(f'Không phân giải được tên miền: {host}') from ex
+    ips = list(dict.fromkeys(i[4][0] for i in infos))
+    if not ips:
+        raise FetchError(f'Không phân giải được tên miền: {host}')
+    if not all(_is_public(i) for i in ips):
+        raise FetchError('Không cho phép địa chỉ nội bộ/riêng tư')
+    return scheme, host, port, ips
 
 
-def fetch_feed(url: str) -> bytes:
-    check_feed_url(url)
-    req = urllib.request.Request(url, headers={'User-Agent': 'AICommandCenter/1.0 RSS Reader'})
-    with urllib.request.urlopen(req, timeout=12) as r:
-        return r.read(MAX_BYTES)
+def check_feed_url(url: str, resolver=None) -> None:
+    """Dùng khi thêm nguồn. Ném ValueError (FetchError) nếu URL không an toàn."""
+    _validate(url, resolver)
+
+
+def _open_socket(ip: str, port: int, timeout: float):
+    return socket.create_connection((ip, port), timeout)
+
+
+def fetch_feed(url: str, resolver=None) -> bytes:
+    """Tải feed an toàn: kiểm tra từng bước redirect, kết nối thẳng tới IP đã kiểm tra
+    (chống DNS rebinding), giới hạn timeout, số redirect và dung lượng."""
+    deadline = time.monotonic() + TOTAL_DEADLINE
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        scheme, host, port, ips = _validate(current, resolver)
+        sock = _open_socket(ips[0], port, TIMEOUT)
+        try:
+            if scheme == 'https':
+                sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+            sock.settimeout(TIMEOUT)
+            conn = http.client.HTTPConnection(host, port, timeout=TIMEOUT)
+            conn.sock = sock  # dùng socket đã ghim IP, không phân giải lại
+            sp = urllib.parse.urlsplit(current)
+            target = (sp.path or '/') + ('?' + sp.query if sp.query else '')
+            conn.request('GET', target, headers={'User-Agent': 'AICommandCenter/1.0 RSS Reader',
+                                                 'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml',
+                                                 'Accept-Encoding': 'identity'})
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                loc = resp.getheader('Location')
+                if not loc:
+                    raise FetchError('Redirect thiếu Location')
+                current = urllib.parse.urljoin(current, loc)
+                continue
+            if resp.status != 200:
+                raise FetchError(f'HTTP {resp.status}')
+            chunks, total = [], 0
+            while True:
+                if time.monotonic() > deadline:
+                    raise FetchError('Quá thời gian tải feed')
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_BYTES:
+                    raise FetchError('Feed vượt quá giới hạn dung lượng')
+                chunks.append(chunk)
+            return b''.join(chunks)
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+    raise FetchError(f'Quá {MAX_REDIRECTS} lần redirect')
 
 
 def _clean(text: str | None, limit: int) -> str:

@@ -19,6 +19,8 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 import rss as rsslib
+import scheduler as sched
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
@@ -26,7 +28,18 @@ DATA_DIR = Path(os.environ.get('AICC_DATA_DIR', str(ROOT / 'data'))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB = DATA_DIR / 'newsroom.sqlite3'
 MAX_PROMPT = 12000
-app = FastAPI(title='AI Command Center', docs_url=None, redoc_url=None)
+SCHED_ENABLED=os.environ.get('AICC_SCHEDULER','0').strip().lower() in ('1','true','yes','on')
+try:SCHED_INTERVAL=max(5,int(os.environ.get('AICC_SCHEDULER_INTERVAL_MIN','60')))
+except ValueError:SCHED_INTERVAL=60
+scheduler_obj=None
+@asynccontextmanager
+async def lifespan(_app):
+    global scheduler_obj
+    if SCHED_ENABLED:
+        scheduler_obj=sched.Scheduler(db,SCHED_INTERVAL);scheduler_obj.start()
+    yield
+    if scheduler_obj:scheduler_obj.stop();scheduler_obj=None
+app = FastAPI(title='AI Command Center', docs_url=None, redoc_url=None, lifespan=lifespan)
 lock = threading.RLock()
 
 RSS = [
@@ -58,6 +71,7 @@ def init():
         CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, job_id TEXT, title TEXT NOT NULL, body TEXT NOT NULL, sources TEXT NOT NULL, seo_title TEXT NOT NULL DEFAULT '', meta_description TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'review', wp_id INTEGER, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS news (id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL, url TEXT NOT NULL UNIQUE, summary TEXT, published TEXT, created_at TEXT NOT NULL);
         ''')
+        c.executescript(sched.SCHEMA)
         c.executescript('''
         CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_fetched_at TEXT, last_status TEXT, last_error TEXT, last_added INTEGER);
         ''')
@@ -267,15 +281,18 @@ def delete_source(sid:str):
     with db() as c:
         if not c.execute('DELETE FROM sources WHERE id=?',(sid,)).rowcount:raise HTTPException(404,'Không có nguồn')
     return {'ok':True}
-_collecting=threading.Lock()
 @app.post('/api/news/collect')
 def collect():
-    if not _collecting.acquire(blocking=False):raise HTTPException(409,'Đang thu thập, vui lòng chờ')
-    try:
-        with db() as c:srcs=[dict(r) for r in c.execute('SELECT * FROM sources WHERE enabled=1')]
-        results=[rsslib.collect_source(db,x) for x in srcs]
-    finally:_collecting.release()
-    return {'added':sum(r['added'] for r in results),'skipped':sum(r['skipped'] for r in results),
-            'errors':[f"{r['source']}: {r['error']}" for r in results if not r['ok']],'results':results}
+    r=sched.run_collection(db,'manual')
+    if r is None:raise HTTPException(409,'Đang có lượt thu thập khác, vui lòng chờ')
+    return r
+@app.get('/api/scheduler')
+def scheduler_status():
+    interval=scheduler_obj.interval_min if scheduler_obj else SCHED_INTERVAL
+    runs=sched.recent_runs(db,10)
+    nxt=scheduler_obj.next_run_at() if scheduler_obj else None
+    return {'enabled':SCHED_ENABLED,'running':bool(scheduler_obj and scheduler_obj.running),'interval_minutes':interval,
+            'next_run_at':nxt,'last_run':runs[0] if runs else None,'runs':runs,
+            'note':None if SCHED_ENABLED else 'Scheduler đang tắt. Đặt AICC_SCHEDULER=1 và khởi động lại backend.'}
 @app.get('/api/news')
 def news():return rows('news',200)
