@@ -32,3 +32,10 @@
 - Bảo vệ dashboard và API; thêm giao diện đăng nhập/đăng xuất; giữ bind localhost.
 - Kiểm thử regression cần chạy trong môi trường clone nhánh PR, đặc biệt khi frontend có session và request CSRF.
 - Chưa triển khai public; chưa có quản trị nhiều tài khoản hoặc khôi phục mật khẩu.
+
+
+## Danh mục nguồn tin (nhánh feature/tech-news-sources-25)
+- Thêm 25 nguồn do người dùng cung cấp, phân loại 4 nhóm: 12 RSS ứng viên và 13 website tham khảo.
+- `source_catalog.py` nhập một lần và tránh trùng URL, giữ nguyên dữ liệu cũ. `server.py` thêm `category` và `source_type` cho SQLite, `scheduler.py` chỉ lấy nguồn `rss` có `enabled=1`.
+- News Center nhóm nguồn, phân biệt mục `tham khảo` không có nút Bật/Tắt RSS. Có test danh mục, migrate và tách website.
+- Chưa chạy bộ test tích hợp và kiểm chứng đủ các nguồn feed thực tế trên MacBook; không được coi các URL HTML là RSS hoặc giả định nguồn RSS luôn hoạt động.
