@@ -12,6 +12,12 @@
 - Test: `tests/test_scheduler.py` (SSRF/redirect/rebinding, lease, scheduler, lỗi nguồn) — 29 test pass.
 - **Chưa kiểm chứng:** tải RSS thật qua Internet và nhánh HTTPS/TLS (môi trường phát triển không có mạng ra ngoài; test dùng HTTP server cục bộ); nhiều worker thật chạy song song.
 
+## Rà soát bảo mật / chạy local (nhánh security/giai-doan-2-5)
+- Đã kiểm tra: đăng nhập, cookie HttpOnly+SameSite=Strict, CSRF, Host/Origin, khóa sau 5 lần sai (smoke test trên server thật + 34 test pass).
+- Sửa test: `test_auth` đăng nhập hai lần làm lệch CSRF (lỗi test, không phải code); `test_server` chưa đăng nhập.
+- Thêm `start-local.bat`. RSS thật qua Internet: chưa kiểm chứng (sandbox không có mạng).
+- Chuẩn bị AI Agent: chưa thêm mã. Gemini/Codex CLI đã có trong `server.py`; Claude chỉ qua API key hợp lệ (trả phí) — chưa bật.
+
 ## Chưa làm
 - Chống trùng theo nội dung/tiêu đề, đa site (`site_id`), đăng nhập.
 - Giai đoạn 3: Master/Scout/Researcher/Writer/Checker, usage. Giai đoạn 4: mở rộng đa website.

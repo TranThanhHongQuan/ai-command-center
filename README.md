@@ -93,3 +93,7 @@ Sau khi khởi tạo, xóa `AICC_ADMIN_PASSWORD` khỏi môi trường chạy ho
 - Các API quản trị yêu cầu cookie phiên; request thay đổi dữ liệu cần header `X-CSRF-Token` từ `GET /api/auth/me`. `/api/health` vẫn mở cho health check.
 - Backend chưa hỗ trợ public production đầy đủ (rate limit tại reverse proxy, kiểm toán cấu hình, giám sát, mật khẩu reset/rotate). Không tự triển khai công khai.
 - Khi thêm/bật RSS, URL vẫn được lọc SSRF như trước. Scheduler tiếp tục chạy độc lập với session trình duyệt.
+
+## Chạy local trên Windows
+
+Chạy `start-local.bat` (tạo `.venv`, cài dependency, chạy tại http://127.0.0.1:8787). Lần đầu script hỏi mật khẩu admin (≥ 12 ký tự, nhập ẩn, không ghi ra file); tài khoản mặc định `admin` (đổi bằng `AICC_ADMIN_USER`). Quét RSS tự động: đặt `AICC_SCHEDULER=1` trước khi chạy (mặc định tắt). Script chưa được kiểm chứng trên Windows thật; các bước tương đương đã chạy trên Linux.

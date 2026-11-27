@@ -7,11 +7,14 @@ class WebTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
-        os.environ['AICC_DATA_DIR'] = cls.tmp.name
+        os.environ.setdefault('AICC_DATA_DIR', cls.tmp.name)
+        os.environ.setdefault('AICC_ADMIN_PASSWORD', 'test-password-12345')
         import server
         cls.server = server
         from fastapi.testclient import TestClient
         cls.client = TestClient(server.app)
+        assert cls.client.post('/api/auth/login', json={'username': 'admin', 'password': os.environ['AICC_ADMIN_PASSWORD']}).status_code == 200
+        cls.client.headers.update({'X-CSRF-Token': cls.client.get('/api/auth/me').json()['csrf_token']})
 
     @classmethod
     def tearDownClass(cls):cls.tmp.cleanup()
