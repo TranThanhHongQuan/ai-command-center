@@ -18,6 +18,7 @@ from html import escape
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
+import auth as authlib
 import rss as rsslib
 import scheduler as sched
 from contextlib import asynccontextmanager
@@ -86,6 +87,7 @@ def init():
             for name,url in RSS:c.execute('INSERT INTO sources(id,name,url,created_at) VALUES(?,?,?,?)',(str(uuid.uuid4()),name,url,now()))
         c.execute("UPDATE jobs SET status='failed', stage='interrupted', error='Worker stopped; start a new job' WHERE status IN ('running','pending')")
 init()
+authlib.install_security(app, db, ROOT / 'static')
 
 def rows(table: str, limit=100):
     with db() as c:
