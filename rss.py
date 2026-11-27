@@ -103,7 +103,7 @@ def _open_socket(ip: str, port: int, timeout: float):
     return socket.create_connection((ip, port), timeout)
 
 
-def fetch_feed(url: str, resolver=None) -> bytes:
+def fetch_feed(url: str, resolver=None, accept: str = 'application/rss+xml, application/atom+xml, application/xml, text/xml') -> bytes:
     """Tải feed an toàn: kiểm tra từng bước redirect, kết nối thẳng tới IP đã kiểm tra
     (chống DNS rebinding), giới hạn timeout, số redirect và dung lượng."""
     deadline = time.monotonic() + TOTAL_DEADLINE
@@ -120,7 +120,7 @@ def fetch_feed(url: str, resolver=None) -> bytes:
             sp = urllib.parse.urlsplit(current)
             target = (sp.path or '/') + ('?' + sp.query if sp.query else '')
             conn.request('GET', target, headers={'User-Agent': 'AICommandCenter/1.0 RSS Reader',
-                                                 'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml',
+                                                 'Accept': accept,
                                                  'Accept-Encoding': 'identity'})
             resp = conn.getresponse()
             if resp.status in (301, 302, 303, 307, 308):

@@ -43,7 +43,8 @@ class WebTests(unittest.TestCase):
         research='{"summary":"Nguồn", "facts":["Một thông tin"],"sources":[{"title":"Docs","url":"https://example.com/docs"}],"gaps":[]}'
         draft='{"title":"Bài viết", "seo_title":"Bài viết SEO", "meta_description":"Mô tả", "slug":"bai-viet", "body":"Nội dung có dẫn nguồn https://example.com/docs"}'
         verdict='{"pass":true,"notes":[]}'
-        with patch.object(self.server,'run_cli',side_effect=[research,draft,verdict]):
+        page=b'<html>N\xe1\xbb\x99i dung ngu\xe1\xbb\x93n</html>'
+        with patch.object(self.server,'run_cli',side_effect=[research,draft,verdict]),patch.object(self.server.rsslib,'fetch_feed',lambda u,**k:page):
             jid='test-workflow'
             with self.server.db() as c:
                 t=self.server.now()

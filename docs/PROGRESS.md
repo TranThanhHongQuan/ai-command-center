@@ -18,6 +18,10 @@
 - Thêm `start-local.bat`. RSS thật qua Internet: chưa kiểm chứng (sandbox không có mạng).
 - Chuẩn bị AI Agent: chưa thêm mã. Gemini/Codex CLI đã có trong `server.py`; Claude chỉ qua API key hợp lệ (trả phí) — chưa bật.
 
+## Giai đoạn 3A — xong phần mã (45 test pass)
+- `scoring.py`, `verify.py`, `POST /api/news/{id}/research`, nút trong News Center, chống trùng job theo tin, một pipeline tại một thời điểm, xác minh nguồn bằng fetch.
+- **Chưa kiểm chứng:** chạy với `gemini`/`codex` CLI thật (sandbox không cài, không có mạng) — test dùng `run_cli` giả; chưa thử trên MacBook; tính hợp lệ điều khoản dùng CLI headless cần bạn tự xác nhận.
+
 ## Chưa làm
 - Chống trùng theo nội dung/tiêu đề, đa site (`site_id`), đăng nhập.
 - Giai đoạn 3: Master/Scout/Researcher/Writer/Checker, usage. Giai đoạn 4: mở rộng đa website.

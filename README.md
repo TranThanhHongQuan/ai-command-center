@@ -97,3 +97,11 @@ Sau khi khởi tạo, xóa `AICC_ADMIN_PASSWORD` khỏi môi trường chạy ho
 ## Chạy local trên Windows
 
 Chạy `start-local.bat` (tạo `.venv`, cài dependency, chạy tại http://127.0.0.1:8787). Lần đầu script hỏi mật khẩu admin (≥ 12 ký tự, nhập ẩn, không ghi ra file); tài khoản mặc định `admin` (đổi bằng `AICC_ADMIN_USER`). Quét RSS tự động: đặt `AICC_SCHEDULER=1` trước khi chạy (mặc định tắt). Script chưa được kiểm chứng trên Windows thật; các bước tương đương đã chạy trên Linux.
+
+## Giai đoạn 3A — Nghiên cứu & viết bài từ tin RSS (chạy local)
+
+- News Center sắp xếp tin theo điểm 0–100 (`scoring.py`, thuần Python: độ mới 40 + từ khóa công nghệ 40 + độ phù hợp độc giả Việt Nam 20; lý do chấm hiển thị cùng tin). Nút **Nghiên cứu & Viết bài** (`POST /api/news/{id}/research`) chạy pipeline Gemini CLI → Codex CLI → Gemini CLI có sẵn, chỉ với một tin; không có chạy tự động theo lịch.
+- Yêu cầu: cài `gemini` và `codex` vào PATH, đăng nhập bằng công cụ chính thức (`gemini`, `codex login`). Thiếu CLI → báo lỗi 409 rõ ràng, không tạo job. Hãy tự kiểm tra điều khoản của Google/OpenAI về việc dùng CLI không tương tác (`gemini -p`, `codex exec`) với gói của bạn.
+- Nguồn do model đưa ra chỉ được tính là **đã xác minh** khi trang tải được (HTTP 200, qua fetch chống SSRF); nếu kèm `quote` thì kiểm tra trích dẫn có trong trang (`quote_found`). URL gốc của tin luôn được kiểm tra. Không nguồn nào xác minh được → job `failed`, không tạo bài. Chỉ nguồn đã xác minh được đưa cho Writer/Checker.
+- Checker không đạt → job `needs_revision`; đạt → bài vào Content Studio (`review`) chờ duyệt. Không đăng WordPress.
+- Chống trùng: mỗi tin tối đa một job chưa lỗi (unique index); tối đa một pipeline chạy tại một thời điểm. Job lỗi cho phép bấm "Thử lại" thủ công; không tự retry. Timeout 200s mỗi bước CLI.
