@@ -70,6 +70,11 @@ def run_collection(db, trigger: str, fetcher=None) -> dict | None:
             errors, status = [f'{type(ex).__name__}: {str(ex)[:160]}'], 'error'
         out = {'run_id': run_id, 'status': status, 'added': sum(r['added'] for r in results),
                'skipped': sum(r['skipped'] for r in results), 'errors': errors, 'results': results}
+        try:  # Editor Agent: chấm điểm/gom nhóm bằng Python, không gọi AI
+            import editor
+            editor.analyze(db)
+        except Exception:  # noqa: BLE001
+            log.exception('Editor Agent lỗi sau lượt quét')
         with db() as c:
             c.execute('UPDATE collect_runs SET finished_at=?,status=?,added=?,skipped=?,error_count=?,errors=? WHERE id=?',
                       (rss.now(), status, out['added'], out['skipped'], len(errors), json.dumps(errors, ensure_ascii=False), run_id))

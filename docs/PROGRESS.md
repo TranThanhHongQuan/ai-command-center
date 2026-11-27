@@ -22,6 +22,11 @@
 - `scoring.py`, `verify.py`, `POST /api/news/{id}/research`, nút trong News Center, chống trùng job theo tin, một pipeline tại một thời điểm, xác minh nguồn bằng fetch.
 - **Chưa kiểm chứng:** chạy với `gemini`/`codex` CLI thật (sandbox không cài, không có mạng) — test dùng `run_cli` giả; chưa thử trên MacBook; tính hợp lệ điều khoản dùng CLI headless cần bạn tự xác nhận.
 
+## Bước 2 — Editor Agent (xong, 65 test pass)
+- `editor.py` + bảng `editor_items`/`editor_groups`; API `/api/editor*`; chạy sau mỗi lượt quét RSS; UI "Editor Agent — Tin đề xuất"; trọng số/ngưỡng cấu hình qua env.
+- Đã thử UI bằng trình duyệt headless trên DB mẫu riêng (8 tin: gom 3 nguồn RTX 5090, tách RTX 5080, lọc tin ngoài ngành và tin cũ).
+- **Giới hạn:** gom nhóm theo token tiêu đề (không embedding) nên có thể sót hoặc tách nhầm; chưa kiểm chứng trên dữ liệu RSS thật nhiều ngày; chưa có UI chỉnh trọng số.
+
 ## Chưa làm
 - Chống trùng theo nội dung/tiêu đề, đa site (`site_id`), đăng nhập.
 - Giai đoạn 3: Master/Scout/Researcher/Writer/Checker, usage. Giai đoạn 4: mở rộng đa website.

@@ -116,3 +116,13 @@ Chạy `start-local.bat` (tạo `.venv`, cài dependency, chạy tại http://12
 - Cơ chế nhập một lần tránh khôi phục nguồn mà người dùng xóa sau này. Nguồn do người dùng thêm thủ công vẫn giữ nguyên; chỉ thêm URL feed thực vào ô thêm nguồn RSS, không nhập URL danh mục HTML.
 - Chỉ chạy local; nếu nguồn feed lỗi hãy tắt riêng nguồn đó, không tắt xác minh SSL hoặc bỏ bảo vệ SSRF.
 - Kiểm tra: `python -m unittest discover -s tests -v`. Sau khi cập nhật nhánh, **khởi động lại backend** rồi mở News Center. Chưa kiểm thử live cả 12 địa chỉ trên MacBook.
+
+## Bước 2 — Editor Agent (lọc, gom nhóm, chấm điểm; không dùng AI)
+
+- `editor.py` chạy tự động sau mỗi lượt quét RSS và khi bấm **Phân tích tin** (`POST /api/editor/analyze`); xem kết quả ở News Center → **Editor Agent — Tin đề xuất** (`GET /api/editor`). Bảng `news` không bị sửa/xóa; kết quả nằm ở `editor_items` và `editor_groups`, ghi lại hoàn toàn mỗi lần nên chạy lặp không tạo bản ghi trùng (lựa chọn Chọn/Loại bỏ của bạn được giữ).
+- **Lọc** (gắn trạng thái + lý do): thiếu tiêu đề/URL, trùng URL, trùng tiêu đề cùng nguồn, quá cũ (>7 ngày), không có từ khóa công nghệ (trừ blog chính thức), đã có job xử lý (cả sự kiện tương tự).
+- **Gom nhóm cùng sự kiện:** so tiêu đề bằng độ giống token (Jaccard/overlap), trong 96 giờ; tách khi mã sản phẩm khác (RTX 5080 ≠ 5090) hoặc loại sự kiện khác (ra mắt ≠ lỗ hổng ≠ đánh giá ≠ giá ≠ kinh doanh ≠ rò rỉ). Tin đại diện ưu tiên nguồn chính thức. Giới hạn: không hiểu ngữ nghĩa sâu, bài đánh giá/phân tích có thể thành nhóm riêng.
+- **Điểm 0–100:** độ mới 30 + công nghệ 25 + độc giả Việt Nam 20 + giá trị nguồn 15 + mới so với nội dung đã xử lý 10. Xếp loại: ≥80 rất đáng nghiên cứu, ≥65 đáng xem xét, ≥40 theo dõi, còn lại ưu tiên thấp. Tin thiếu ngày xuất bản bị giảm điểm độ mới, không bị loại.
+- **Cấu hình (biến môi trường):** `AICC_EDITOR_WEIGHTS=freshness=30,tech=25,vietnam=20,source=15,novelty=10` (tự chuẩn hóa tổng 100), `AICC_EDITOR_THRESHOLDS=very_high=80,high=65,watch=40`, `AICC_EDITOR_DAILY_MAX=5`, `AICC_EDITOR_MAX_AGE_DAYS=7`.
+- Mỗi ngày đề xuất tối đa 5 sự kiện (điểm ≥ ngưỡng "đáng xem xét"). **Chuyển sang nghiên cứu** chỉ chạy khi bạn bấm, dùng lại pipeline 3A (một job tại một thời điểm); lọc/chấm điểm không bao giờ gọi Gemini/Codex.
+- **Cập nhật trên MacBook:** `git fetch && git checkout feature/tech-news-sources-25 && git pull`, rồi chạy lại server (bảng mới tự được tạo, dữ liệu cũ giữ nguyên).

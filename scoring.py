@@ -6,7 +6,9 @@ import re
 TECH = ['ai', 'trí tuệ nhân tạo', 'chatgpt', 'openai', 'gemini', 'claude', 'copilot', 'llm', 'nvidia', 'chip', 'bán dẫn', 'semiconductor',
         'iphone', 'ios', 'android', 'windows', 'macos', 'samsung', 'apple', 'google', 'microsoft', 'meta', 'tesla', 'starlink',
         'bảo mật', 'security', 'lỗ hổng', 'vulnerability', 'ransomware', 'hack', 'phishing', '5g', 'wifi', 'cloud', 'robot', 'gpu',
-        'laptop', 'smartphone', 'điện thoại', 'ra mắt', 'launch', 'release', 'update', 'cập nhật', 'open source', 'github', 'linux']
+        'laptop', 'smartphone', 'điện thoại', 'ra mắt', 'launch', 'release', 'update', 'cập nhật', 'open source', 'github', 'linux',
+        'software', 'phần mềm', 'ứng dụng', 'server', 'máy chủ', 'data center', 'trung tâm dữ liệu', 'api', 'developer', 'lập trình',
+        'processor', 'vi xử lý', 'blockchain', 'tablet', 'camera', 'pin', 'battery', 'gaming']
 VN_DIRECT = ['việt nam', 'vietnam', 'viettel', 'vnpt', 'fpt', 'zalo', 'vinfast', 'vingroup', 'momo', 'tiếng việt', 'vietnamese', 'hà nội', 'hồ chí minh']
 VN_BROAD = ['iphone', 'samsung', 'windows', 'android', 'chatgpt', 'facebook', 'tiktok', 'youtube', 'google', 'apple', 'whatsapp', 'wifi', 'pc']
 
@@ -15,7 +17,8 @@ def _has(text: str, term: str) -> bool:
     return re.search(rf'(?<![\w]){re.escape(term)}(?![\w])', text, re.I) is not None
 
 
-def score_item(title: str, summary: str = '', published: str = '', now: dt.datetime | None = None) -> dict:
+def parts(title: str, summary: str = '', published: str = '', now: dt.datetime | None = None) -> dict:
+    """Thành phần điểm: fresh (0-40), tech (0-40), vn (0-20) cùng lý do. Editor Agent quy đổi sang trọng số riêng."""
     now = now or dt.datetime.now(dt.timezone.utc)
     reasons: list[str] = []
     if published:
@@ -42,4 +45,9 @@ def score_item(title: str, summary: str = '', published: str = '', now: dt.datet
         vn = 10; reasons.append('sản phẩm phổ biến tại Việt Nam')
     else:
         vn = 0
-    return {'score': fresh + tech + vn, 'reasons': reasons}
+    return {'fresh': fresh, 'tech': tech, 'vn': vn, 'reasons': reasons, 'tech_hits': len(t_hits) + len(s_hits)}
+
+
+def score_item(title: str, summary: str = '', published: str = '', now: dt.datetime | None = None) -> dict:
+    p = parts(title, summary, published, now)
+    return {'score': p['fresh'] + p['tech'] + p['vn'], 'reasons': p['reasons']}
