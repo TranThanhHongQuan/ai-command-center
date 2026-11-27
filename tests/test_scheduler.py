@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 os.environ['AICC_DATA_DIR'] = tempfile.mkdtemp()
+os.environ['AICC_ADMIN_PASSWORD'] = 'test-password-12345'
 os.environ.pop('AICC_SCHEDULER', None)
 import rss  # noqa: E402
 import scheduler  # noqa: E402
@@ -132,6 +133,7 @@ class SchedulerTests(unittest.TestCase):
 
     def test_scheduler_not_started_by_default(self):
         with TestClient(server.app) as client:
+            self.assertEqual(client.post('/api/auth/login',json={'username':'admin','password':'test-password-12345'}).status_code,200)
             st = client.get('/api/scheduler').json()
         self.assertFalse(st['enabled'])
         self.assertFalse(st['running'])
@@ -150,7 +152,10 @@ class SchedulerTests(unittest.TestCase):
         self.assertTrue(scheduler.acquire_lease(server.db, 'collect', owner))
         self.assertFalse(scheduler.acquire_lease(server.db, 'collect', 'x'))
         self.assertIsNone(scheduler.run_collection(server.db, 'manual', self.fetcher))
-        self.assertEqual(TestClient(server.app).post('/api/news/collect').status_code, 409)
+        client = TestClient(server.app)
+        self.assertEqual(client.post('/api/auth/login',json={'username':'admin','password':'test-password-12345'}).status_code,200)
+        client.headers.update({'X-CSRF-Token':client.get('/api/auth/me').json()['csrf_token']})
+        self.assertEqual(client.post('/api/news/collect').status_code, 409)
         scheduler.release_lease(server.db, 'collect', owner)
         self.assertIsNotNone(scheduler.run_collection(server.db, 'manual', self.fetcher))
 
@@ -180,7 +185,10 @@ class SchedulerTests(unittest.TestCase):
 
     def test_manual_collect_endpoint_records_run(self):
         with patch.object(rss, 'fetch_feed', self.fetcher):
-            r = TestClient(server.app).post('/api/news/collect').json()
+            client = TestClient(server.app)
+            self.assertEqual(client.post('/api/auth/login',json={'username':'admin','password':'test-password-12345'}).status_code,200)
+            client.headers.update({'X-CSRF-Token':client.get('/api/auth/me').json()['csrf_token']})
+            r = client.post('/api/news/collect').json()
         self.assertEqual((r['status'], r['added']), ('partial', 1))
         self.assertEqual(scheduler.recent_runs(server.db)[0]['trigger'], 'manual')
 
