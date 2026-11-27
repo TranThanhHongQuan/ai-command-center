@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 os.environ['AICC_DATA_DIR'] = tempfile.mkdtemp()
+os.environ['AICC_ADMIN_PASSWORD'] = 'test-password-12345'
 import rss  # noqa: E402
 import server  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -76,6 +77,9 @@ class DedupeTests(unittest.TestCase):
 
     def test_api_collect_and_list(self):
         client = TestClient(server.app)
+        login=client.post('/api/auth/login',json={'username':'admin','password':'test-password-12345'})
+        self.assertEqual(login.status_code,200)
+        client.headers.update({'X-CSRF-Token':client.get('/api/auth/me').json()['csrf_token']})
         with patch.object(rss, 'fetch_feed', lambda u: RSS_XML):
             r = client.post('/api/news/collect').json()
         self.assertEqual(r['added'], 2)
