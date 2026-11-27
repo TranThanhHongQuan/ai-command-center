@@ -56,7 +56,7 @@ def run_collection(db, trigger: str, fetcher=None) -> dict | None:
         with db() as c:
             c.execute("UPDATE collect_runs SET status='error',finished_at=?,errors=? WHERE status='running' AND started_at<?",
                       (started, json.dumps(['Bị gián đoạn']), _after(-LEASE_TTL)))
-            srcs = [dict(r) for r in c.execute('SELECT * FROM sources WHERE enabled=1')]
+            srcs = [dict(r) for r in c.execute('SELECT * FROM sources WHERE enabled=1 AND source_type='rss'')]
             c.execute('INSERT INTO collect_runs(id,trigger,started_at,status,sources_total) VALUES(?,?,?,?,?)',
                       (run_id, trigger, started, 'running', len(srcs)))
         results = []
