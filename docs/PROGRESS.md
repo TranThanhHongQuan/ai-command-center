@@ -16,3 +16,9 @@
 - Chống trùng theo nội dung/tiêu đề, đa site (`site_id`), đăng nhập.
 - Giai đoạn 3: Master/Scout/Researcher/Writer/Checker, usage. Giai đoạn 4: mở rộng đa website.
 - Chưa chuyển sang Next.js; chưa hỗ trợ nhiều instance dùng DB tách biệt.
+
+## Giai đoạn 2.5 — đề xuất bảo mật (chờ PR review)
+- Thêm `auth.py`: tài khoản quản trị một người, scrypt hash, cookie phiên HttpOnly/SameSite, CSRF, giới hạn đăng nhập sai, allowlist Host và Origin.
+- Bảo vệ dashboard và API; thêm giao diện đăng nhập/đăng xuất; giữ bind localhost.
+- Kiểm thử regression cần chạy trong môi trường clone nhánh PR, đặc biệt khi frontend có session và request CSRF.
+- Chưa triển khai public; chưa có quản trị nhiều tài khoản hoặc khôi phục mật khẩu.
