@@ -42,7 +42,7 @@ Start the server in **that same shell**. Never paste secrets into chat, commit t
 
 ## Security and limitations
 
-- This is a **single-user local** prototype bound to `127.0.0.1`. It has no login and **must NOT be reverse-proxied or exposed to the internet** as-is. Protect it with authentication/HTTPS before any VPS deployment.
+- This is a **single-user local** prototype bound to `127.0.0.1`. It now includes single-admin login, session cookies, CSRF and Host/Origin checking. **Do not expose publicly without an HTTPS reverse proxy, explicit allowlists and additional deployment review.** Protect it with authentication/HTTPS before any VPS deployment.
 - Worker is an in-process thread (one job per request). It is not a durable queue; interrupted running jobs are marked failed at startup. For production use a persistent worker queue, concurrency cap, retry/idempotency safeguards and user authentication.
 - Model outputs can be wrong. The checker only compares provided research, not actual independent live verification of every claim. **Human review is mandatory**.
 - Gemini CLI/headless and Codex CLI/noninteractive behavior may change; verify current official documentation. The app does not bypass permissions, send browser cookies or scrape logged-in sessions.
@@ -73,3 +73,23 @@ python -m unittest discover -s tests -v
 - **Không chạy trùng:** khóa (lease) trong SQLite bảo vệ cả quét thủ công lẫn tự động; thời điểm quét kế tiếp đọc từ DB. Nhờ vậy nhiều worker dùng chung một file DB không quét chồng nhau. **Chưa hỗ trợ nhiều instance dùng DB riêng/mạng** — khuyến nghị chạy một worker (`uvicorn` mặc định).
 - **Chống SSRF khi tải feed:** kiểm tra URL ban đầu và từng redirect (tối đa 3); chỉ http(s), cổng 80/443, không có user:pass; từ chối nếu bất kỳ IP nào là loopback/riêng tư/link-local/metadata/CGNAT/multicast (kể cả IPv4-mapped IPv6); DNS chỉ phân giải một lần mỗi hop và kết nối thẳng tới IP đã kiểm tra (chống DNS rebinding; TLS vẫn xác minh theo tên miền). Timeout 10s/thao tác, 25s tổng, tối đa 2MB, không giải nén (`Accept-Encoding: identity`). Không đi qua proxy hệ thống.
 - Test: `python -m unittest discover -s tests` (29 test, dùng HTTP server cục bộ và resolver giả, không cần Internet).
+
+
+## Giai đoạn 2.5 — đăng nhập quản trị
+
+Mặc định ứng dụng vẫn chỉ bind `127.0.0.1`. Khởi tạo admin lần đầu trên PowerShell trước khi chạy server:
+
+```powershell
+$env:AICC_ADMIN_USER='admin'
+$env:AICC_ADMIN_PASSWORD='đặt-mật-khẩu-riêng-tối-thiểu-12-ký-tự'
+python -m uvicorn server:app --host 127.0.0.1 --port 8787
+```
+
+Sau khi khởi tạo, xóa `AICC_ADMIN_PASSWORD` khỏi môi trường chạy hoặc cấu hình dịch vụ. Mật khẩu lưu dưới dạng scrypt hash trong SQLite, không được lưu trong Git. Vào `http://127.0.0.1:8787/login` và đăng nhập. Nếu database đã có admin, biến này không thay đổi mật khẩu (chưa có màn hình đổi mật khẩu); muốn đặt lại phải thực hiện quy trình quản trị có kiểm soát.
+
+- `AICC_ALLOWED_HOSTS`: danh sách hostname chấp nhận, cách nhau bằng dấu phẩy, mặc định `localhost,127.0.0.1,testserver` (testserver chỉ để tương thích FastAPI TestClient). Khi triển khai thật, cấu hình danh sách đúng hostname và cân nhắc loại testserver.
+- `AICC_ALLOWED_ORIGINS`: danh sách nguồn Origin được phép cho các POST/PUT/PATCH/DELETE; mặc định chỉ chấp nhận same-origin. Định cấu hình qua HTTPS reverse proxy cẩn thận.
+- `AICC_COOKIE_SECURE=1`: bắt buộc khi phục vụ qua HTTPS; cookie có HttpOnly + SameSite=Strict và hết hạn sau 12 giờ. Đăng nhập sai 5 lần trong 15 phút sẽ khóa tạm thời theo IP + tên tài khoản.
+- Các API quản trị yêu cầu cookie phiên; request thay đổi dữ liệu cần header `X-CSRF-Token` từ `GET /api/auth/me`. `/api/health` vẫn mở cho health check.
+- Backend chưa hỗ trợ public production đầy đủ (rate limit tại reverse proxy, kiểm toán cấu hình, giám sát, mật khẩu reset/rotate). Không tự triển khai công khai.
+- Khi thêm/bật RSS, URL vẫn được lọc SSRF như trước. Scheduler tiếp tục chạy độc lập với session trình duyệt.
