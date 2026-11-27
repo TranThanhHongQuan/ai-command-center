@@ -56,3 +56,11 @@ Start the server in **that same shell**. Never paste secrets into chat, commit t
 python -m pip install httpx
 python -m unittest discover -s tests -v
 ```
+
+## Giai đoạn 1 — Thu thập RSS & chống trùng
+
+- Nguồn RSS lưu trong bảng `sources` (lần đầu tự nạp 6 nguồn mặc định). Thêm/bật/tắt/xóa trong **News Center** hoặc qua `GET/POST/PATCH/DELETE /api/sources`. URL nội bộ/riêng tư bị chặn.
+- `POST /api/news/collect` (nút **Thu thập RSS**): tải từng nguồn, lỗi một nguồn không chặn nguồn khác; trạng thái, thời điểm và số tin mới ghi vào `sources`.
+- Chống trùng: URL được chuẩn hóa (`rss.py: normalize_url` — bỏ `utm_*`/`fbclid`, `www.`, `#fragment`, `/` cuối, http→https, sắp xếp query) và lưu duy nhất ở `news.url_norm`.
+- Chạy: `pip install -r requirements.txt && python -m uvicorn server:app --host 127.0.0.1 --port 8787`, mở http://127.0.0.1:8787 → News Center.
+- Test: `pip install httpx && python -m unittest discover -s tests`.

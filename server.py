@@ -18,6 +18,7 @@ from html import escape
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
+import rss as rsslib
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
@@ -57,6 +58,18 @@ def init():
         CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, job_id TEXT, title TEXT NOT NULL, body TEXT NOT NULL, sources TEXT NOT NULL, seo_title TEXT NOT NULL DEFAULT '', meta_description TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'review', wp_id INTEGER, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS news (id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL, url TEXT NOT NULL UNIQUE, summary TEXT, published TEXT, created_at TEXT NOT NULL);
         ''')
+        c.executescript('''
+        CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_fetched_at TEXT, last_status TEXT, last_error TEXT, last_added INTEGER);
+        ''')
+        cols={r['name'] for r in c.execute('PRAGMA table_info(news)')}
+        for col,ddl in (('url_norm','TEXT'),('source_id','TEXT'),('status',"TEXT NOT NULL DEFAULT 'new'")):
+            if col not in cols:c.execute(f'ALTER TABLE news ADD COLUMN {col} {ddl}')
+        for r in c.execute('SELECT id,url FROM news WHERE url_norm IS NULL').fetchall():
+            n=rsslib.normalize_url(r['url'])
+            if n and not c.execute('SELECT 1 FROM news WHERE url_norm=?',(n,)).fetchone():c.execute('UPDATE news SET url_norm=? WHERE id=?',(n,r['id']))
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_news_url_norm ON news(url_norm)')
+        if not c.execute('SELECT 1 FROM sources LIMIT 1').fetchone():
+            for name,url in RSS:c.execute('INSERT INTO sources(id,name,url,created_at) VALUES(?,?,?,?)',(str(uuid.uuid4()),name,url,now()))
         c.execute("UPDATE jobs SET status='failed', stage='interrupted', error='Worker stopped; start a new job' WHERE status IN ('running','pending')")
 init()
 
@@ -225,34 +238,44 @@ def wordpress(aid:str):
     if not wp_id:raise HTTPException(502,'WordPress chưa xác nhận ID bài viết')
     with db() as c:c.execute("UPDATE articles SET status='sent_to_wp',wp_id=? WHERE id=?",(wp_id,aid))
     return {'wp_id':wp_id,'status':'draft','link':obj.get('link')}
+class SourceIn(BaseModel):
+    name:str=Field(min_length=1,max_length=120)
+    url:str=Field(min_length=8,max_length=2000)
+class SourcePatch(BaseModel):
+    enabled:bool
+@app.get('/api/sources')
+def sources():
+    with db() as c:
+        return [dict(r) for r in c.execute('SELECT s.*,(SELECT COUNT(*) FROM news n WHERE n.source_id=s.id) AS news_count FROM sources s ORDER BY name')]
+@app.post('/api/sources',status_code=201)
+def add_source(req:SourceIn):
+    url=req.url.strip()
+    try:rsslib.check_feed_url(url)
+    except ValueError as ex:raise HTTPException(422,str(ex))
+    sid=str(uuid.uuid4())
+    with db() as c:
+        if c.execute('SELECT 1 FROM sources WHERE url=?',(url,)).fetchone():raise HTTPException(409,'Nguồn đã tồn tại')
+        c.execute('INSERT INTO sources(id,name,url,created_at) VALUES(?,?,?,?)',(sid,req.name.strip(),url,now()))
+    return {'id':sid}
+@app.patch('/api/sources/{sid}')
+def patch_source(sid:str,req:SourcePatch):
+    with db() as c:
+        if not c.execute('UPDATE sources SET enabled=? WHERE id=?',(int(req.enabled),sid)).rowcount:raise HTTPException(404,'Không có nguồn')
+    return {'ok':True}
+@app.delete('/api/sources/{sid}')
+def delete_source(sid:str):
+    with db() as c:
+        if not c.execute('DELETE FROM sources WHERE id=?',(sid,)).rowcount:raise HTTPException(404,'Không có nguồn')
+    return {'ok':True}
+_collecting=threading.Lock()
 @app.post('/api/news/collect')
 def collect():
-    count=0;errors=[]
-    for name,url in RSS:
-        try:
-            req=urllib.request.Request(url,headers={'User-Agent':'AICommandCenter/1.0 RSS Reader'})
-            with urllib.request.urlopen(req,timeout=12) as response:
-                raw=response.read(2_000_000)
-            root=ET.fromstring(raw)
-            entries=root.findall('.//item')
-            is_atom=False
-            if not entries:
-                entries=root.findall('{http://www.w3.org/2005/Atom}entry');is_atom=True
-            for x in entries[:25]:
-                title=(x.findtext('{http://www.w3.org/2005/Atom}title') if is_atom else x.findtext('title')) or ''
-                if is_atom:
-                    linknode=x.find('{http://www.w3.org/2005/Atom}link')
-                    link=linknode.get('href','') if linknode is not None else ''
-                    pub=x.findtext('{http://www.w3.org/2005/Atom}updated') or ''
-                    summary=x.findtext('{http://www.w3.org/2005/Atom}summary') or ''
-                else:
-                    link=x.findtext('link') or '';pub=x.findtext('pubDate') or '';summary=x.findtext('description') or ''
-                if not title.strip() or not link.startswith(('https://','http://')):continue
-                with db() as c:
-                    cur=c.execute('INSERT OR IGNORE INTO news(id,title,source,url,summary,published,created_at) VALUES(?,?,?,?,?,?,?)',
-                     (str(uuid.uuid4()),title[:500],name,link[:2000],re.sub('<[^>]+>',' ',summary)[:1000],pub[:120],now()))
-                    count+=cur.rowcount
-        except Exception as ex:errors.append(f'{name}: {str(ex)[:100]}')
-    return {'added':count,'errors':errors}
+    if not _collecting.acquire(blocking=False):raise HTTPException(409,'Đang thu thập, vui lòng chờ')
+    try:
+        with db() as c:srcs=[dict(r) for r in c.execute('SELECT * FROM sources WHERE enabled=1')]
+        results=[rsslib.collect_source(db,x) for x in srcs]
+    finally:_collecting.release()
+    return {'added':sum(r['added'] for r in results),'skipped':sum(r['skipped'] for r in results),
+            'errors':[f"{r['source']}: {r['error']}" for r in results if not r['ok']],'results':results}
 @app.get('/api/news')
 def news():return rows('news',200)
