@@ -23,6 +23,7 @@ import rss as rsslib
 import scheduler as sched
 import scoring
 import verify as verifylib
+import source_catalog as catalog
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 
@@ -45,14 +46,6 @@ async def lifespan(_app):
 app = FastAPI(title='AI Command Center', docs_url=None, redoc_url=None, lifespan=lifespan)
 lock = threading.RLock()
 
-RSS = [
- ('OpenAI News','https://openai.com/news/rss.xml'),
- ('Google Blog','https://blog.google/rss/'),
- ('GitHub Blog','https://github.blog/feed/'),
- ('TechCrunch','https://techcrunch.com/feed/'),
- ('The Verge','https://www.theverge.com/rss/index.xml'),
- ('Ars Technica','https://feeds.arstechnica.com/arstechnica/index'),
-]
 
 def now(): return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
 @contextmanager
@@ -78,6 +71,10 @@ def init():
         c.executescript('''
         CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_fetched_at TEXT, last_status TEXT, last_error TEXT, last_added INTEGER);
         ''')
+        source_cols={r['name'] for r in c.execute('PRAGMA table_info(sources)')}
+        if 'source_type' not in source_cols:c.execute("ALTER TABLE sources ADD COLUMN source_type TEXT NOT NULL DEFAULT 'rss'")
+        if 'category' not in source_cols:c.execute("ALTER TABLE sources ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
+        catalog.install_catalog(c, lambda:str(uuid.uuid4()), now)
         cols={r['name'] for r in c.execute('PRAGMA table_info(news)')}
         for col,ddl in (('url_norm','TEXT'),('source_id','TEXT'),('status',"TEXT NOT NULL DEFAULT 'new'")):
             if col not in cols:c.execute(f'ALTER TABLE news ADD COLUMN {col} {ddl}')
@@ -87,8 +84,6 @@ def init():
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_news_url_norm ON news(url_norm)')
         if 'news_id' not in {r['name'] for r in c.execute('PRAGMA table_info(jobs)')}:c.execute('ALTER TABLE jobs ADD COLUMN news_id TEXT')
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_news ON jobs(news_id) WHERE news_id IS NOT NULL AND status!='failed'")
-        if not c.execute('SELECT 1 FROM sources LIMIT 1').fetchone():
-            for name,url in RSS:c.execute('INSERT INTO sources(id,name,url,created_at) VALUES(?,?,?,?)',(str(uuid.uuid4()),name,url,now()))
         c.execute("UPDATE jobs SET status='failed', stage='interrupted', error='Worker stopped; start a new job' WHERE status IN ('running','pending')")
 init()
 authlib.install_security(app, db, ROOT / 'static')
@@ -296,12 +291,15 @@ def add_source(req:SourceIn):
     sid=str(uuid.uuid4())
     with db() as c:
         if c.execute('SELECT 1 FROM sources WHERE url=?',(url,)).fetchone():raise HTTPException(409,'Nguồn đã tồn tại')
-        c.execute('INSERT INTO sources(id,name,url,created_at) VALUES(?,?,?,?)',(sid,req.name.strip(),url,now()))
+        c.execute("INSERT INTO sources(id,name,url,created_at,source_type,category) VALUES(?,?,?,?,?,?)",(sid,req.name.strip(),url,now(),'rss','other'))
     return {'id':sid}
 @app.patch('/api/sources/{sid}')
 def patch_source(sid:str,req:SourcePatch):
     with db() as c:
-        if not c.execute('UPDATE sources SET enabled=? WHERE id=?',(int(req.enabled),sid)).rowcount:raise HTTPException(404,'Không có nguồn')
+        source=c.execute('SELECT source_type FROM sources WHERE id=?',(sid,)).fetchone()
+        if not source:raise HTTPException(404,'Không có nguồn')
+        if req.enabled and source['source_type']!='rss':raise HTTPException(409,'Đây là website tham khảo, chưa có RSS được xác minh')
+        c.execute('UPDATE sources SET enabled=? WHERE id=?',(int(req.enabled),sid))
     return {'ok':True}
 @app.delete('/api/sources/{sid}')
 def delete_source(sid:str):
