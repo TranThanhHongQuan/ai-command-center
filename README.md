@@ -105,3 +105,14 @@ Chạy `start-local.bat` (tạo `.venv`, cài dependency, chạy tại http://12
 - Nguồn do model đưa ra chỉ được tính là **đã xác minh** khi trang tải được (HTTP 200, qua fetch chống SSRF); nếu kèm `quote` thì kiểm tra trích dẫn có trong trang (`quote_found`). URL gốc của tin luôn được kiểm tra. Không nguồn nào xác minh được → job `failed`, không tạo bài. Chỉ nguồn đã xác minh được đưa cho Writer/Checker.
 - Checker không đạt → job `needs_revision`; đạt → bài vào Content Studio (`review`) chờ duyệt. Không đăng WordPress.
 - Chống trùng: mỗi tin tối đa một job chưa lỗi (unique index); tối đa một pipeline chạy tại một thời điểm. Job lỗi cho phép bấm "Thử lại" thủ công; không tự retry. Timeout 200s mỗi bước CLI.
+
+
+## Danh mục 25 nguồn tin công nghệ (local)
+
+- Danh mục nằm trong `source_catalog.py`, gồm 4 nhóm: 7 blog công nghệ chính thức, 7 trang công nghệ Việt Nam, 6 trang báo công nghệ Việt Nam, 5 kênh báo/tín hiệu quốc tế.
+- **12 địa chỉ RSS/Atom được cung cấp** (7 blog chính thức và 5 nguồn quốc tế) được thêm vào mục quét; các địa chỉ chưa được thử trực tiếp trên máy người dùng có thể báo lỗi do feed thay đổi hoặc máy chủ từ chối.
+- **13 website tham khảo** được hiển thị trong News Center với nhãn `tham khảo`, có nút mở trang, không được scheduler quét bằng trình phân tích RSS. Ví dụ `https://cafef.vn/cong-nghe.html` là trang HTML, không phải RSS.
+- Khi nâng cấp từ bản cũ, nguồn mới được nhập **một lần** vào SQLite, không xóa tin cũ, không ghi đè trạng thái bật/tắt nguồn RSS đã có. Các URL HTML trong danh mục nếu trước đây được thêm như RSS sẽ tự chuyển sang mục tham khảo và tắt quét.
+- Cơ chế nhập một lần tránh khôi phục nguồn mà người dùng xóa sau này. Nguồn do người dùng thêm thủ công vẫn giữ nguyên; chỉ thêm URL feed thực vào ô thêm nguồn RSS, không nhập URL danh mục HTML.
+- Chỉ chạy local; nếu nguồn feed lỗi hãy tắt riêng nguồn đó, không tắt xác minh SSL hoặc bỏ bảo vệ SSRF.
+- Kiểm tra: `python -m unittest discover -s tests -v`. Sau khi cập nhật nhánh, **khởi động lại backend** rồi mở News Center. Chưa kiểm thử live cả 12 địa chỉ trên MacBook.
